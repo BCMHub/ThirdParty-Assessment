@@ -1,0 +1,3 @@
+VendorName,BusinessOwnerName,BusinessOwnerEmail,VendorContactPerson,VendorContactEmail,VendorContactPhone,Notes,Cycle
+Example Cloud Services,Amina Hassan,amina.hassan@example.com,Omar Saleh,omar.saleh@vendor.example,+201001234567,"Initial onboarding; replace sample domains before import",2026
+Example Payment Processor,Karim Nabil,karim.nabil@example.com,Lina Adel,lina.adel@vendor.example,0015550100,"Annual review, high criticality",2026-H1

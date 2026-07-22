@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Claude Code session / local settings
+.claude/
+
+# Excel lock files & generated build artifacts (built on Windows, not source)
+~$*.xlsm
+ThirdParty_Assessment_Tracker.xlsm
+BuildLog_*.txt
+
+# Python
+__pycache__/
+*.pyc
