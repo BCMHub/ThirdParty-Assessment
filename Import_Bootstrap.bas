@@ -306,15 +306,26 @@ Private Sub LogMessage(ByVal levelText As String, ByVal messageText As String)
     Dim stamp As String
     stamp = Format$(Now, "yyyy-mm-dd hh:nn:ss")
 
+    ' 1) Immediate window (Ctrl+G): the most reliable channel - no file I/O,
+    '    no sheet dependency, works even on locked-down/sandboxed machines.
+    '    Copy the whole Immediate window if the sheet or text file is unavailable.
+    Debug.Print stamp & " [" & levelText & "] " & messageText
+
+    ' 2) BuildLog sheet: defensive so a sheet hiccup cannot cascade into failure.
     If Not mLogSheet Is Nothing Then
+        On Error Resume Next
         mLogSheet.Cells(mLogRow, 1).Value2 = stamp
         mLogSheet.Cells(mLogRow, 2).Value2 = levelText
         mLogSheet.Cells(mLogRow, 3).Value2 = messageText
         mLogRow = mLogRow + 1
+        On Error GoTo 0
     End If
 
+    ' 3) Optional text file: best-effort only.
     If mLogFileOpen Then
+        On Error Resume Next
         Print #mLogFile, stamp & " [" & levelText & "] " & messageText
+        On Error GoTo 0
     End If
     DoEvents
 End Sub
