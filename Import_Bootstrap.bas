@@ -4,6 +4,17 @@ Option Explicit
 ' Paste this standard module into a saved macro-enabled workbook beside .\src,
 ' enable "Trust access to the VBA project object model", and run BuildTracker.
 
+' ============================================================================
+' >>> AMEND THIS ONE LINE IF NEEDED <<<
+' Full LOCAL path of the project folder that CONTAINS the "src" subfolder
+' (and where the .xlsm and BuildLog should be written).
+'   - Leave it EMPTY ("") to auto-detect from where this workbook is saved.
+'   - Set it if the workbook is on OneDrive/SharePoint or you hit path errors.
+' Example:  Private Const BASE_FOLDER_OVERRIDE As String = "C:\TPAT"
+' (No trailing backslash needed; do not point it at "src" itself.)
+' ============================================================================
+Private Const BASE_FOLDER_OVERRIDE As String = ""
+
 Private Const TARGET_FILE As String = "ThirdParty_Assessment_Tracker.xlsm"
 Private Const LOG_SHEET As String = "BuildLog"
 Private Const SCHEMA_VERSION As String = "2.0.0"
@@ -27,6 +38,7 @@ Private mTargetSaved As Boolean
 Public Sub BuildTracker()
     Dim sourceDirectory As String
     Dim outputPath As String
+    Dim baseDir As String
     Dim project As Object
     Dim managerIdentity As String
     Dim managerDisplayName As String
@@ -51,16 +63,18 @@ Public Sub BuildTracker()
     LogEnvironment
     LogMessage "INFO", "Bootstrap workbook: " & ThisWorkbook.FullName
 
-    If Len(ThisWorkbook.Path) = 0 Then
+    baseDir = BaseFolder()
+    If Len(baseDir) = 0 Then
         Err.Raise vbObjectError + 4100, "BuildTracker", _
-            "The bootstrap workbook must be saved before running BuildTracker. Save it as a macro-enabled workbook next to the src folder."
+            "No project folder is known. Either save this workbook next to the src folder, or set BASE_FOLDER_OVERRIDE at the top of this module to the full local path of the project folder (the one containing src)."
     End If
-    If InStr(1, ThisWorkbook.Path, "://") > 0 Then
+    If InStr(1, baseDir, "://") > 0 Then
         Err.Raise vbObjectError + 4103, "BuildTracker", _
-            "This workbook is running from a cloud/synced location (OneDrive or SharePoint):" & vbCrLf & _
-            ThisWorkbook.Path & vbCrLf & _
-            "VBA cannot reliably read the src files or save the .xlsm there. Move the WHOLE folder (including src) to a plain local path such as C:\TPAT\, reopen Tracker_Builder.xlsm from that local copy, and run BuildTracker again."
+            "The project folder is a cloud/synced location (OneDrive or SharePoint):" & vbCrLf & _
+            baseDir & vbCrLf & _
+            "VBA cannot reliably read src or save the .xlsm there. Move the WHOLE folder (including src) to a plain local path such as C:\TPAT, then either reopen the workbook from there OR set BASE_FOLDER_OVERRIDE to that path, and run BuildTracker again."
     End If
+    LogMessage "INFO", "Effective project (base) folder: " & baseDir
 
     SetStep "Resolve source directory"
     sourceDirectory = ResolveSourceDirectory()
@@ -73,7 +87,7 @@ Public Sub BuildTracker()
     End If
 
     SetStep "Resolve output path"
-    outputPath = ThisWorkbook.Path & Application.PathSeparator & TARGET_FILE
+    outputPath = baseDir & Application.PathSeparator & TARGET_FILE
     LogMessage "INFO", "Target path: " & outputPath
     If StrComp(outputPath, ThisWorkbook.FullName, vbTextCompare) = 0 Then
         Err.Raise vbObjectError + 4102, "BuildTracker", _
@@ -179,7 +193,7 @@ CleanExit:
 
     If finalOK Then
         MsgBox "PASS: the tracker was built and structurally self-tested." & vbCrLf & _
-               ThisWorkbook.Path & Application.PathSeparator & TARGET_FILE & vbCrLf & _
+               BaseFolder() & Application.PathSeparator & TARGET_FILE & vbCrLf & _
                "Build log: " & mLogPath, vbInformation, "Tracker bootstrap"
     Else
         MsgBox "FAIL: the tracker bootstrap did not fully pass." & vbCrLf & _
@@ -229,11 +243,17 @@ Private Sub InitializeLogging()
     LogMessage "INFO", "Bootstrap workbook: " & ThisWorkbook.FullName
     wbPath = ThisWorkbook.Path
     LogMessage "INFO", "Bootstrap folder: " & IIf(Len(wbPath) > 0, wbPath, "(unsaved)")
+    If Len(Trim$(BASE_FOLDER_OVERRIDE)) > 0 Then
+        LogMessage "INFO", "BASE_FOLDER_OVERRIDE is set to: " & BASE_FOLDER_OVERRIDE
+    Else
+        LogMessage "INFO", "BASE_FOLDER_OVERRIDE is empty (auto-detecting from the workbook folder)."
+    End If
 
     ' --- Text-file log: best-effort only. A failure here must NOT abort the build. ---
-    logFolder = wbPath
+    logFolder = BaseFolder()
+    LogMessage "INFO", "Effective base folder: " & IIf(Len(logFolder) > 0, logFolder, "(none)")
     If Len(logFolder) = 0 Or InStr(1, logFolder, "://") > 0 Then
-        LogMessage "WARN", "Bootstrap folder is unsaved or a cloud/URL path (OneDrive/SharePoint). The text log will use TEMP; the build itself still needs a LOCAL folder."
+        LogMessage "WARN", "Base folder is unset or a cloud/URL path (OneDrive/SharePoint). The text log will use TEMP; the build itself still needs a LOCAL base folder - set BASE_FOLDER_OVERRIDE at the top of this module."
         logFolder = Environ$("TEMP")
     End If
 
@@ -375,6 +395,21 @@ Private Sub RaiseLoggedError(ByVal stepText As String, ByVal errNumber As Long, 
     Err.Raise errNumber, stepText, errDescription
 End Sub
 
+Private Function BaseFolder() As String
+    ' The effective project folder: BASE_FOLDER_OVERRIDE if set, else the
+    ' folder this workbook was saved in. Trailing separators are trimmed.
+    Dim result As String
+    If Len(Trim$(BASE_FOLDER_OVERRIDE)) > 0 Then
+        result = Trim$(BASE_FOLDER_OVERRIDE)
+    Else
+        result = ThisWorkbook.Path
+    End If
+    Do While Len(result) > 0 And Right$(result, 1) = Application.PathSeparator
+        result = Left$(result, Len(result) - 1)
+    Loop
+    BaseFolder = result
+End Function
+
 Private Function ResolveSourceDirectory() As String
     Dim preferred As String
     Dim entered As String
@@ -382,7 +417,7 @@ Private Function ResolveSourceDirectory() As String
     Dim errDescription As String
 
     On Error GoTo Failed
-    preferred = ThisWorkbook.Path & Application.PathSeparator & "src"
+    preferred = BaseFolder() & Application.PathSeparator & "src"
     If FolderExists(preferred) Then
         LogMessage "PASS", "Found preferred source folder beside bootstrap workbook."
         ResolveSourceDirectory = preferred
