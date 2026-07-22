@@ -4,9 +4,9 @@
 # Claude Code session / local settings
 .claude/
 
-# Excel lock files & generated build artifacts (built on Windows, not source)
+# Excel lock files & generated/local workbooks (built on Windows, not source)
 ~$*.xlsm
-ThirdParty_Assessment_Tracker.xlsm
+*.xlsm
 BuildLog_*.txt
 
 # Python
