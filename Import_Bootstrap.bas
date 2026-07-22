@@ -55,6 +55,12 @@ Public Sub BuildTracker()
         Err.Raise vbObjectError + 4100, "BuildTracker", _
             "The bootstrap workbook must be saved before running BuildTracker. Save it as a macro-enabled workbook next to the src folder."
     End If
+    If InStr(1, ThisWorkbook.Path, "://") > 0 Then
+        Err.Raise vbObjectError + 4103, "BuildTracker", _
+            "This workbook is running from a cloud/synced location (OneDrive or SharePoint):" & vbCrLf & _
+            ThisWorkbook.Path & vbCrLf & _
+            "VBA cannot reliably read the src files or save the .xlsm there. Move the WHOLE folder (including src) to a plain local path such as C:\TPAT\, reopen Tracker_Builder.xlsm from that local copy, and run BuildTracker again."
+    End If
 
     SetStep "Resolve source directory"
     sourceDirectory = ResolveSourceDirectory()
@@ -184,14 +190,16 @@ End Sub
 
 Private Sub InitializeLogging()
     Dim existing As Worksheet
-    Dim errNumber As Long
-    Dim errDescription As String
+    Dim wbPath As String
+    Dim logFolder As String
+    Dim fileErr As Long
 
-    On Error GoTo Failed
+    ' --- BuildLog worksheet: the minimum log surface. If even this fails, stop. ---
+    On Error GoTo SheetFailed
     Set existing = Nothing
     On Error Resume Next
     Set existing = ThisWorkbook.Worksheets(LOG_SHEET)
-    On Error GoTo Failed
+    On Error GoTo SheetFailed
 
     If existing Is Nothing Then
         Set mLogSheet = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
@@ -204,34 +212,54 @@ Private Sub InitializeLogging()
     mLogSheet.Cells(1, 1).Value2 = "Timestamp"
     mLogSheet.Cells(1, 2).Value2 = "Level"
     mLogSheet.Cells(1, 3).Value2 = "Message"
+    mLogRow = 2
+
+    ' Cosmetic formatting must never abort logging.
+    On Error Resume Next
     mLogSheet.Range("A1:C1").Font.Bold = True
     mLogSheet.Columns("A").ColumnWidth = 22
     mLogSheet.Columns("B").ColumnWidth = 10
     mLogSheet.Columns("C").ColumnWidth = 110
     mLogSheet.Columns("C").WrapText = True
-    mLogRow = 2
-
-    If Len(ThisWorkbook.Path) > 0 Then
-        mLogPath = ThisWorkbook.Path & Application.PathSeparator & _
-                   "BuildLog_" & Format$(Now, "yyyymmdd_hhnnss") & ".txt"
-        mLogFile = FreeFile
-        Open mLogPath For Output As #mLogFile
-        mLogFileOpen = True
-    Else
-        mLogPath = "(not created: bootstrap workbook is unsaved)"
-    End If
+    On Error GoTo 0
 
     LogMessage "INFO", String$(78, "=")
     LogMessage "INFO", "Third-Party Assessment Tracker - pure VBA bootstrap log"
     LogMessage "INFO", "Started: " & Format$(Now, "yyyy-mm-dd hh:nn:ss")
-    LogMessage "INFO", "Text log: " & mLogPath
+    LogMessage "INFO", "Bootstrap workbook: " & ThisWorkbook.FullName
+    wbPath = ThisWorkbook.Path
+    LogMessage "INFO", "Bootstrap folder: " & IIf(Len(wbPath) > 0, wbPath, "(unsaved)")
+
+    ' --- Text-file log: best-effort only. A failure here must NOT abort the build. ---
+    logFolder = wbPath
+    If Len(logFolder) = 0 Or InStr(1, logFolder, "://") > 0 Then
+        LogMessage "WARN", "Bootstrap folder is unsaved or a cloud/URL path (OneDrive/SharePoint). The text log will use TEMP; the build itself still needs a LOCAL folder."
+        logFolder = Environ$("TEMP")
+    End If
+
+    On Error Resume Next
+    fileErr = 0
+    If Len(logFolder) > 0 Then
+        mLogPath = logFolder & Application.PathSeparator & "BuildLog_" & Format$(Now, "yyyymmdd_hhnnss") & ".txt"
+        mLogFile = FreeFile
+        Open mLogPath For Output As #mLogFile
+        fileErr = Err.Number
+    End If
+    On Error GoTo 0
+
+    If fileErr = 0 And Len(mLogPath) > 0 Then
+        mLogFileOpen = True
+        LogMessage "INFO", "Text log file: " & mLogPath
+    Else
+        mLogFileOpen = False
+        mLogPath = "(text file unavailable - err " & fileErr & "; using the BuildLog sheet only)"
+        LogMessage "WARN", "Could not create a text log file (error " & fileErr & "). Continuing with the BuildLog sheet only - copy the BuildLog sheet contents back instead of the .txt."
+    End If
     LogMessage "INFO", String$(78, "=")
     Exit Sub
 
-Failed:
-    errNumber = Err.Number
-    errDescription = Err.Description
-    Err.Raise errNumber, "InitializeLogging", errDescription
+SheetFailed:
+    Err.Raise Err.Number, "InitializeLogging", "Could not create the BuildLog worksheet: " & Err.Description
 End Sub
 
 Private Sub LogEnvironment()
